@@ -2,9 +2,9 @@
 
 
 run: #ocaml
-	@perl ./pac.pl -l scheme m.ms | tee m.scm 
+	@perl ./pac.pl -l scheme t.pac | tee t.scm 
 	@echo ----
-	@sagittarius m.scm
+	@sagittarius t.scm
 	@#t/310-let-nest-doublepoint.t
 
 test: clean
