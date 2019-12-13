@@ -1,0 +1,6 @@
+(define (sayhi x)
+  (let (
+         (a (list (list aa 11 )(list
+       bbb 00)))
+         (b 99))
+      (print a)))

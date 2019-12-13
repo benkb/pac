@@ -1,0 +1,3 @@
+(define lamb
+   (lambda (x)
+      (foo faa)))

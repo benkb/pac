@@ -1,0 +1,8 @@
+(cond
+    (> 11 99)
+      print "ff"
+      print "ff"
+    (> 77 22)
+      print "ff"
+      print "ff")
+   

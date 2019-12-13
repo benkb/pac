@@ -1,0 +1,1 @@
+(def myhash { "jsdf" (fn [x]((print x))) })

@@ -1,0 +1,3 @@
+(def lamb
+   (fn [x]
+      (foo faa)))

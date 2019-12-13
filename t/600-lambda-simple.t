@@ -1,0 +1,2 @@
+lamb =
+   \x\ print x 

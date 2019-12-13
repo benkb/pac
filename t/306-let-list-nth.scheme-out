@@ -1,0 +1,8 @@
+(define foo
+   (let (
+         (lst (list 11
+            999
+            999
+            77 00)))
+      (print lst (list-nth lst 0))
+      (jsdf ee)))
