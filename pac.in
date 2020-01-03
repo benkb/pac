@@ -1,0 +1,137 @@
+#!/bin/sh
+
+HELP='
+pac - parenthesis calculator
+
+   pac <lang> <fileinput>
+
+   lang: eg. gauche, ocaml, kawa
+   dialects: scheme, clojure
+
+   options:
+   -d | --dialect : dialect input, eg "-d scheme.scm"
+   file mode:
+   -o | --output <file>: output to file 
+   -f | --force: force output to file, derive output name if no --output is given 
+   -v | --verbose;
+
+   two operational modes:
+   simple mode) write to stdout
+   file mode) write to file
+'
+
+
+USAGE='lang fileinput [ -f force-compile ] [ -d lisp-dialect.ext] [-o --output]  '
+
+PAC_SCRIPT=@@CWD@@/pac.pl
+
+die () { echo $@; exit 1; }
+usage () { local app=$(basename $0); die "usage ($app): $USAGE" ; }
+help() { printf "$HELP" ;  echo ""; usage ;  }
+
+warn() { echo "$@" 1>&2; }
+
+
+lang= input_file= force= dialect_input= output_file= verbose=
+while [ "$#" -ne 0 ] ; do
+  arg=$1
+  shift
+   case "$arg" in
+     -h|--help)
+       help
+       ;;
+     -o|--output)
+       [ -n "$1" ] || usage
+       output_file=$1
+       shift
+       ;;
+     -v|--verbose)
+       verbose=1
+       ;;
+     -f|--force)
+       force=1
+       ;;
+     -d)
+       dialect_input=$1
+       shift
+       ;;
+     -*) usage ;;
+      *)
+        if [ -n "$lang" ] ; then
+        input_file=$arg
+        else
+         lang=$arg
+        fi
+      ;;
+  esac
+done
+
+
+[ -n "$lang" ] || usage
+[ -n "$input_file" ] || usage
+
+
+dialect=  dialect_ext=
+case "$lang" in
+  ocaml) dialect=scheme; dialect_ext=scm
+    ;;
+  owl|s48|prescheme|kawa|gambit|gambit-*|gauche|sagittarius|guile) 
+    dialect=scheme; dialect_ext=scm;
+    ;;
+ clojure)
+    dialect=clojure; dialect_ext=clj ;;
+  *)
+    if [ -n "$dialect_input" ] ; then
+      dialect=${dialect_input%.*}
+      dialect_ext=${dialect_input##*.}
+    else
+      die "Err: no dialect input"
+    fi
+    ;;
+esac
+
+[ -n "$dialect" ] || die "Err: dialect missing"
+
+
+if [ -n "$output_file" ] || [ -n "$force" ]; then
+  continue
+else
+   perl $PAC_SCRIPT -d "$dialect" -p "$lang" "$input_file" && exit 0
+fi
+
+# --output: write to file
+
+
+
+[ -n "$output_file" ] || {
+   [ -n "$dialect_ext" ] || die "Err: no dialect_ext"
+   input_base=$(basename $input_file)
+   input_dir=$(dirname $input_file)
+   input_name=${input_base%.*}
+   output_base=$input_name.$dialect_ext
+   output_file=$input_dir/$output_base
+}
+  
+
+compile () {
+   [ -n "$verbose" ] && warn "perl $PAC_SCRIPT -d $dialect -p $lang $input_file > $output_file"
+   perl $PAC_SCRIPT -d "$dialect" -p "$lang" "$input_file" > "$output_file"
+
+}
+
+
+if [ -f "$output_file" ] ; then 
+  if [ "$PAC_SCRIPT" -nt "$output_file" ]; then
+    compile
+   else
+      if [ "$input_file" -nt "$output_file" ]; then
+        compile
+      else
+         [ -n "$force" ] && compile
+      fi
+  fi
+else
+  compile
+fi
+
+echo $output_file

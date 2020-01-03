@@ -8,10 +8,15 @@ HELP='run all test in t/*.t against corresponding t/*.expect'
 
 
 lang=$1
+dir=$2
+
+[ -n "$dir" ] || dir=t
+
 
 die () { echo $@; exit 2; }
 
 [ -n "$lang" ] || die "usage: lang"
+[ -n "$dir" ] || die "Err: dir $dir not exists"
 
 # setup
 #for t in t/*.t; do
@@ -26,16 +31,16 @@ die () { echo $@; exit 2; }
 echo running tests:
 
 noexpect=
-for t in $(ls t/*.t | sort) ; do
+for t in $(ls $dir/*.t | sort) ; do
   [ -f "$t" ] || continue
    bt=$(basename $t)
    bt_name=${bt%.*}
-   expect="t/$bt_name.${lang}-expect"
-   bypass="t/$bt_name.${lang}-bypass"
+   expect="$dir/$bt_name.${lang}-expect"
+   bypass="$dir/$bt_name.${lang}-bypass"
    if [ -f "$expect" ]; then
      echo testing $t
-     test_out="t/$bt_name.${lang}-out"
-     perl pac.pl -l $lang $t > "$test_out" 
+     test_out="$dir/$bt_name.${lang}-out"
+     perl pac.pl -d $lang $t > "$test_out" 
      if diff -q "$expect" "$test_out" ; then
         printf  " $t "
      else

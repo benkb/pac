@@ -8,7 +8,7 @@ use warnings;
 use Data::Dumper 'Dumper';
 
 my $USAGE = '<file>';
-my $HELP = 'mores - writing s-expressions with withespace and other special characters';
+my $HELP = 'paces - writing s-expressions with withespace and other special characters';
 
 my $blockbuster_closers = ')';
 my $blockbuster_beginners = '(';

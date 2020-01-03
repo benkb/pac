@@ -7,7 +7,7 @@ use Data::Dumper 'Dumper';
 
 sub echo { print join(' ', grep { $_ if $_ } @_); print "\n"; }
 
-my %Langs = (
+my %Lisp_dialects = (
 	clojure => {
 		toplevel_defun => '%s [',
     post_doublepoint => 1,
@@ -42,6 +42,8 @@ my %Langs = (
     post_doublepoint => undef,
     pre_doublepoint => undef,
     trans =>{
+      'match_list_open' => '(',
+      'match_list_close' => ')',
       'lambda_open' => 'lambda (',
       'lambda_close' => ')',
       'lambda_short' => ')(',
@@ -56,6 +58,7 @@ my %Langs = (
       '[' => '(list',
       ']' => ')',
       ']]' => ')',
+      ')' => ')',
       alist => '[ (values',
       alist_get => '(alist_get',
       ',' => ')(list',
@@ -85,13 +88,14 @@ my %Langs = (
 );
 
 sub lines_loop {
-   my ($file_lines, $lang, $trans) = @_;
+   my ($file_lines, $dialect, $trans, $pp) = @_;
+
 
    my ($instring, $prev, @word, @line, @lines);
 
    my ($wordcount, @paren_stack) = (0);
    my $word2line; 
-   my ($linestarted, $pre_doublepoint, $post_doublepoint, $mid_doublepoint);
+   my ($linestarted, $pre_doublepoint, $post_doublepoint, $mid_doublepoint, $match_pattern);
    my @lineparens;
 	my $toplevel_defun;
   my ($lambda_close, $lambda_open, $lambda_singleline_confirm, $lambda_singleline);
@@ -99,21 +103,33 @@ sub lines_loop {
    my $whitecheck; $whitecheck = sub {
       my ($eol ) = @_;
 
+      return unless $prev; # for comments adn preprocs
+
+
          if($prev eq '='){
             if(join('', @word) eq '='){
-               my $one = pop @line;
-                  if($one eq ' '){
-                     @word = ();                        
-                     my $two = pop @line;
-                     # TODO: check two
-                     push @line, $trans->{def} , ' ',  $two;
-                  }else{
-                     die 'TODO: checking ='
-                  }
+							@word = ();
             }elsif(join('', @word) eq '=='){
 							@word = ();
 							push @line, '=';
 						}
+         }elsif($prev eq '>'){
+            if(join('', @word) eq '->'){
+              undef $match_pattern;
+              @word = ();
+            } elsif(join('', @word) eq '=>'){
+               my $one = pop @line;
+               if($one eq ' '){
+                  @word = ();                        
+                  my $two = pop @line;
+                  # TODO: check two
+                  push @line, $trans->{defun} , ' ',  $two;
+                  #push @line,  $two;
+									$toplevel_defun = 1;
+               }else{
+                 die 'TODO: checking ='
+               }
+            }
          }elsif($prev eq '\\'){
                if($lambda_close){
                  die "Err: lambda already closed"
@@ -131,7 +147,7 @@ sub lines_loop {
             if(join('', @word) eq ':'){
                if($eol){ 
                   @word = ();
-                  $post_doublepoint = $lang->{post_doublepoint};
+                  $post_doublepoint = $dialect->{post_doublepoint};
                 }else{
                   if ($linestarted){
                      @word = ();
@@ -145,32 +161,28 @@ sub lines_loop {
                    }else{
                      @word = ();
                      #$word2line->($trans->{pre_doublepoint_start});
-                     $pre_doublepoint = $lang->{pre_doublepoint};
+                     $pre_doublepoint = $dialect->{pre_doublepoint};
                      $linestarted = 1;
                    }
                 }
+              }elsif(join('', @word) eq '=:'){
+               my $one = pop @line;
+                  if($one eq ' '){
+                     @word = ();                        
+                     my $two = pop @line;
+                     # TODO: check two
+                     push @line, $trans->{def} , ' ',  $two;
+                  }else{
+                     die 'TODO: checking ='
+                  }
             }else{ 
                die 'todo'; 
             }
            # if(join('', @word) eq '::'){
            #    push @line, 'let';
            #    @word = ();
-           #    $post_doublepoint = $lang->{post_doublepoint};
+           #    $post_doublepoint = $dialect->{post_doublepoint};
            # }
-         }elsif($prev eq '>'){
-            if(join('', @word) eq '=>'){
-               my $one = pop @line;
-               if($one eq ' '){
-                  @word = ();                        
-                  my $two = pop @line;
-                  # TODO: check two
-                  push @line, $trans->{defun} , ' ',  $two;
-                  #push @line,  $two;
-									$toplevel_defun = 1;
-               }else{
-                 die 'TODO: checking ='
-               }
-            }
          }
          unless($eol){
            #echo 'jsdf' . Dumper \@line;
@@ -183,7 +195,7 @@ sub lines_loop {
          $wordcount++ unless @paren_stack;
 
          my ($w) = join('', @word);
-         if($lang->{mod_form}){
+         if($dialect->{mod_form}){
             if($w =~ /\w+\.\w+/){
                my @ws = split (/\./, $w);
                push @line, ': ' . join(' ', @ws);
@@ -200,6 +212,24 @@ sub lines_loop {
       }
    };
 
+   my $out_preproc;
+   my $setup_preproc = sub {
+     my ($codeline) = @_;
+     substr($codeline, 0, 1) = "";
+     my ($cmd, $arg) = split(/\s+/, $codeline);
+     if ($cmd eq 'case'){
+       if($arg eq $pp){
+         $out_preproc = undef; 
+       }else{
+         $out_preproc = 1; 
+       }
+     }elsif($cmd eq 'esac'){
+         $out_preproc = undef; 
+     }else{
+       die 'todo ' . $cmd
+     }
+   };
+
    my $i = 0;
    foreach (@$file_lines) {
       $i++;chomp;
@@ -208,18 +238,28 @@ sub lines_loop {
 
       $wordcount = 0 unless (@paren_stack);
 
-      ($linestarted, $post_doublepoint, $pre_doublepoint, $mid_doublepoint, $toplevel_defun) = (undef,undef, undef, undef, undef);
+      ($linestarted, $post_doublepoint, $pre_doublepoint, $mid_doublepoint, $toplevel_defun, $match_pattern) = (undef,undef, undef, undef, undef, undef);
 
       my $codeline;
       if($instring){
         $codeline = $fileline;
       }else{
          my ($ws,$code) = ( $_ =~ /^(\s*)(.*)/); $code =~ s/\s+$//;
-         ($codeline) = $code;
-         $indent = split('', $ws);
+         if($code =~ /=\w.+/){
+            $setup_preproc->($code);
+            push @lines, [ undef, ['; ' . $code], undef, undef, undef, undef, undef] ; 
+            @word = (); @line = ();
+           next;
+         }elsif($out_preproc){
+            push @lines, [ undef, ['; ' . $code], undef, undef, undef, undef, undef] ; 
+            next;
+         }else{
+            ($codeline) = $code;
+            $indent = split('', $ws);
+          }
       }
 
-      my ($lambda_short,$lambda_word, $comment) ;
+      my ($lambda_short,$lambda_word, $comment ) ;
       ($lambda_close, $lambda_open, $lambda_singleline_confirm, $lambda_singleline,) = (undef, undef, undef, undef);
       foreach(split('', $codeline)){
          if($instring){
@@ -250,6 +290,8 @@ sub lines_loop {
                push @word, $_;
                $lambda_close = undef;
                #$prev = $_ ; # preventing it from going into $linestaredsf
+             }elsif(/\|/){
+               $match_pattern = 1;
              }elsif(/\\/){
                if($lambda_close){
                  die "Err: lambda already closed"
@@ -301,22 +343,21 @@ sub lines_loop {
                }elsif(/\(/){
                   my ($prefix) =  join('', @word);  
                   @word = ();
+                  $wordcount++ unless(@paren_stack);
                   if($prefix){
                      if($lambda_open){
                        undef $lambda_open ;
                         $lambda_short = 1;
                         push @paren_stack, '))';
                         push @line , $prefix , $trans->{lambda_short}  ;
-                        $wordcount++;
                      }else{
                         #$word2line->($prefix, ' ');
                         push @line, '(',  $prefix, ' ';
                         push @paren_stack, ')';
-                        $wordcount++;
                       }
                   }else{
                     if($toplevel_defun){
-											my $tpl = $lang->{toplevel_defun};
+											my $tpl = $dialect->{toplevel_defun};
                       my $ws = pop @line;
                       my $fun_name = pop @line;
 											my $txt = sprintf $tpl, $fun_name;
@@ -326,7 +367,6 @@ sub lines_loop {
                     }
                      push @paren_stack, ')';
                   }
-                  $wordcount++ unless(@paren_stack);
                }elsif(/\)/){
                   my $p = $paren_stack[-1];
                   if($toplevel_defun){
@@ -341,8 +381,13 @@ sub lines_loop {
                      $word2line->(' ', '(list-nth', ' ',  $w, ' ');
                      push @paren_stack, ']'; 
                   }else{
+                    if($match_pattern){
+                     $word2line->($trans->{'match_list_open'});
+                     push @paren_stack, $trans->{'match_list_close'}; 
+                    }else{
                      $word2line->($trans->{'list'});
                      push @paren_stack, ']]'; 
+                   }
                   }
                }elsif(/\]/){
                   my $p = pop @paren_stack;
@@ -361,10 +406,10 @@ sub lines_loop {
                }elsif(/\}/){
                   my $t = pop @paren_stack;
 
-                  $word2line->($lang->{trans}->{'}'});
+                  $word2line->($dialect->{trans}->{'}'});
 						      $wordcount++;
                }elsif(/\,/){
-                  $word2line->($lang->{trans}->{','});
+                  $word2line->($dialect->{trans}->{','});
                }else{
                   push @word, $_
                }
@@ -418,7 +463,7 @@ sub dump_lines{
 }
 
 sub cliffhanger {
-  my($lang, $trans, $indent_stack, $lines,$indent, $li_ln, $lila_ln, $last_oneword, $last_post_doublepoint) = @_;
+  my($dialect, $trans, $indent_stack, $lines,$indent, $li_ln, $lila_ln, $last_oneword, $last_post_doublepoint) = @_;
 
   my $cnt = 0;
   while(my $is = pop @$indent_stack){
@@ -455,7 +500,7 @@ sub calculate_closing_parens {
 }
 
 sub parentie {
-   my ($raw_lines, $lang, $trans) = @_;
+   my ($raw_lines, $dialect, $trans) = @_;
    my ($last_indent, $li_ln, $lila_ln);
    my ($last_parstack, $blockbuster) = (0,0);
    my $last_oneword;
@@ -488,7 +533,7 @@ sub parentie {
                         unless($last_oneword or $doublepoint);
                   }
 
-                 cliffhanger($lang, $trans, \@indent_stack, \@lines,$indent, $li_ln, $lila_ln, $last_oneword, $last_doublepoint);
+                 cliffhanger($dialect, $trans, \@indent_stack, \@lines,$indent, $li_ln, $lila_ln, $last_oneword, $last_doublepoint);
                  #          echo ccccc => $i;
                  ($doublepoint_off, $last_doublepoint) = (undef, undef); 
                }else{
@@ -546,33 +591,38 @@ sub parentie {
 }
 
 sub usage {
-	die "Usage: $0 --lang LANG\n";
+	die "Usage: $0 --dialect LISP-dialect --pp PREPROC ARG\n";
 }
+
 sub main {
 	use Getopt::Long qw(GetOptions);
  
-	my $lang_opt;
-	GetOptions('lang=s' => \$lang_opt) or usage();
-	
+	my ($dialect_opt, $pp_opt);
+	GetOptions(
+    'dialect=s' => \$dialect_opt,
+    'pp=s' => \$pp_opt,
 
-  my ($filename) =  @_;
+  ) or usage();
+	
+  my ($filename) =  @ARGV;
   usage() unless ($filename);
   open (my $fh, '<', $filename) || die "Err: no opening"; 
 
+
   my @lines = <$fh>;
   close $fh;
-   my ($lang, $trans);
-   if (exists $Langs{$lang_opt}) {
-      $lang = $Langs{$lang_opt};
-      $trans = $lang->{trans};
+   my ($dialect, $trans);
+   if (exists $Lisp_dialects{$dialect_opt}) {
+      $dialect = $Lisp_dialects{$dialect_opt};
+      $trans = $dialect->{trans};
    }else{
-      die "Err: lang $lang_opt doesn't exists";
+      die "Err: lisp dialect $dialect_opt doesn't exists";
    }
-  my ($raw_lines) = lines_loop(\@lines, $lang, $trans);
-  my ($lines) = parentie $raw_lines, $lang, $trans;
+  my ($raw_lines) = lines_loop(\@lines, $dialect, $trans, $pp_opt);
+  my ($lines) = parentie $raw_lines, $dialect, $trans;
    print join("\n", map { join('',  @$_ ) }  @$lines);
    print "\n";
   #print Dumper $raw_lines;
 }
 
-main @ARGV;
+main; 
